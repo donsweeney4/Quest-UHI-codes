@@ -1,3 +1,7 @@
 *.log
+.bash*
+.profile
+.python*
+.selected*
 Maildir/
 archived_data/
