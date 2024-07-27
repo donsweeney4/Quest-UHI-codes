@@ -1,3 +1,3 @@
 *.log
-Maildir
-archived_data
+Maildir/
+archived_data/
