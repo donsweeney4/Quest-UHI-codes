@@ -6,3 +6,5 @@
 Maildir/
 archived_data/
 xxx*
+.git-credentials
+.env
