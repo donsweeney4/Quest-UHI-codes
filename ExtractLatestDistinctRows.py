@@ -1,11 +1,12 @@
+import os
 import mysql.connector
 
 # Connect to the MySQL database
 db = mysql.connector.connect(
-    host='localhost',
+    host=os.environ['DB_HOST'],
     database='uhi',
-    user='uhi',
-    password='uhi'
+    user=os.environ['DB_USER'],
+    password=os.environ['DB_PASSWORD']
 )
 
 if db.is_connected():

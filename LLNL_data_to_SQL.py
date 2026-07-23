@@ -11,10 +11,10 @@ import logging
 def connect_to_database():
     try:
         connection = mysql.connector.connect(
-            host='localhost',
+            host=os.environ['DB_HOST'],
             database='uhi',
-            user='uhi',
-            password='uhi'
+            user=os.environ['DB_USER'],
+            password=os.environ['DB_PASSWORD']
         )
         if connection.is_connected():
             print("Connected to MySQL database")
@@ -26,41 +26,39 @@ def connect_to_database():
         return None
 
 # Function to fetch and process LLNL weather data
-def fetch_llnl_weather_data(instrument_id, start_date, end_date):
+def fetch_llnl_weather_data(height, start_date, end_date):
     formatted_start_date = start_date.strftime('%Y-%m-%d')
     formatted_end_date = end_date.strftime('%Y-%m-%d')
 
-    url = 'https://weather.llnl.gov/cgi-pub/reports/report_export.pl'
+    url = 'https://weather.llnl.gov/api/report/simple/'
 
     params = {
-        'format': 'tsv',
-        'instrument_ids': instrument_id,
-        'alt_units': '',
-        'min': '0',
-        'max': '0',
-        'avg': '1',
-        'data_resolution': 'full',
         'start_date': formatted_start_date,
-        'end_date': formatted_end_date
+        'end_date': formatted_end_date,
+        'schema': 'grid',
+        'tower_id': '200',  # LLNL main site (Site 300 is '301')
+        'height': height,
+        'instrument_type': 'temperature',
     }
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=30)
 
     logging.info(f"Status Code: {response.status_code}")
-    logging.info(f"Response Content: {response.text[:100]}")
+    logging.info(f"Response Content: {response.text[:200]}")
 
-    if response.status_code == 200:
-        data = []
-        reader = csv.DictReader(io.StringIO(response.text), delimiter='\t', fieldnames=['date', 'temperature', 'humidity'])
-        next(reader)  # Skip header row
-        for row in reader:
-            if float(row['temperature']) > -10.0:
-                data.append({'date': row['date'], 'temperature': float(row['temperature'])})
-            else:
-                logging.debug(f"Skipping row with empty temperature: {row}")
-        return data
-    else:
+    if response.status_code != 200:
         logging.info(f"Failed to fetch data: HTTP {response.status_code}")
         return None
+
+    payload = response.json()
+    field_name = f"Air_Temperature_celsius_LLNL_{height}m"
+    data = []
+    for row in payload.get('data', []):
+        temperature = row.get(field_name)
+        if temperature is not None and float(temperature) > -10.0:
+            data.append({'date': row['Datetime_PST_Standard'], 'temperature': float(temperature)})
+        else:
+            logging.debug(f"Skipping row with empty/invalid temperature: {row}")
+    return data
 
 # Ensure log directory exists
 os.makedirs("./logs", exist_ok=True)
@@ -88,18 +86,18 @@ if connection:
 
     sensorlabel = ['LLNL (2m)', 'LLNL (10m)', 'LLNL (23m)', 'LLNL (52m)']
     sensorid = ['Sensor52a', 'Sensor52b', 'Sensor52c', 'Sensor52d']
-    instrumentid = ['350', '351', '353', '352']
+    height = ['2', '10', '23', '52']
     sql = """INSERT INTO `LLNL_data` (`sensorid`, `sensorlabel`, `timestamp`, `temperature`) VALUES """
     values = []
 
-    for j in range(len(instrumentid)):
-        weather_data = fetch_llnl_weather_data(instrumentid[j], start_date, end_date)
+    for j in range(len(height)):
+        weather_data = fetch_llnl_weather_data(height[j], start_date, end_date)
 
         if not weather_data:
             logging.error(f"No data returned for sensor {sensorid[j]}")
             continue
 
-        dates = [datetime.strptime(entry['date'], '%Y-%m-%d %H:%M:%S') for entry in weather_data]
+        dates = [datetime.strptime(entry['date'], '%Y-%m-%dT%H:%M:%S') for entry in weather_data]
         temperatures = [entry['temperature'] for entry in weather_data]
 
         for i in range(len(dates)):

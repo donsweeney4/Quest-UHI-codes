@@ -11,10 +11,10 @@ import logging
 def connect_to_database():
     try:
         connection = mysql.connector.connect(
-            host='localhost',
+            host=os.environ['DB_HOST'],
             database='uhi',
-            user='uhi',
-            password='uhi'
+            user=os.environ['DB_USER'],
+            password=os.environ['DB_PASSWORD']
         )
         if connection.is_connected():
             print("Connected to MySQL database")
@@ -28,7 +28,7 @@ def connect_to_database():
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# Function to fetch and process LLNL weather data
+# Function to fetch and process  weather data
 def fetch_quest_weather_data(instrument_id, start_date, end_date):
     formatted_start_date = start_date.strftime('%Y-%m-%d')
     formatted_end_date = end_date.strftime('%Y-%m-%d')

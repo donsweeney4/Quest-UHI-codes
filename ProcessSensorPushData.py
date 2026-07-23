@@ -38,8 +38,14 @@ from mysql.connector import Error
 import logging
 
 # Configure logging for flexibility and control
+log_file = '/home/uhi/ProcessSensorPushData.log'
+
+# Blank line between runs makes the log file easier to read
+with open(log_file, 'a') as f:
+    f.write('\n')
+
 logging.basicConfig(
-    filename='/home/uhi/ProcessSensorPushData.log',
+    filename=log_file,
     level=logging.INFO,  # Adjust logging level as needed (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'  # Optional timestamp format
@@ -67,29 +73,21 @@ def process_attachment(part, email_number):
             f.write(part.get_payload(decode=True))
         print(f"Moved attachment to email_attachments: {unique_filename}")
         logging.info(f"Moved attachment to email_attachments: {unique_filename}")
-
-
-def process_body(part, email_number):
-    content_type = part.get_content_type()
-    charset = part.get_content_charset() or 'utf-8'
-    if content_type == 'text/plain':
-        body = part.get_payload(decode=True).decode(charset, errors='ignore')
-        with open(f"{email_attachments_dir}/{email_number}_body.txt", 'w') as f:
-            f.write(body)
-        print(f"Saved plain text body as .html for email {email_number}")
-        logging.info(f"Saved plain text body as .html for email {email_number}")
-    elif content_type == 'text/html':
-        body = part.get_payload(decode=True).decode(charset, errors='ignore')
-        with open(f"{email_attachments_dir}/{email_number}_body.html", 'w') as f:
-            f.write(body)
-        print(f"Saved HTML body for email {email_number}")
-        logging.info(f"Saved HTML body for email {email_number}")
+        return True
+    return False
 
 
 def process_incoming_mail_attachments():
+    """
+    Process all mail in the Maildir.
+
+    :return: number of attachments extracted
+    """
     os.makedirs(email_attachments_dir, exist_ok=True)
 
     maildir = mailbox.Maildir(maildir_path, factory=None, create=False)
+
+    attachment_count = 0
 
     for i, key in enumerate(maildir.keys(), start=1):
         msg = maildir[key]
@@ -99,13 +97,14 @@ def process_incoming_mail_attachments():
         for part in email_msg.walk():
             if part.get_content_maintype() == 'multipart':
                 continue
-            if part.get('Content-Disposition') is None:
-                process_body(part, i)
-            else:
-                process_attachment(part, i)
+            if part.get('Content-Disposition') is not None:
+                if process_attachment(part, i):
+                    attachment_count += 1
         print('Removing email in maildir: ' + key)
         logging.info('Removing email in maildir: ' + key)
         maildir.discard(key)  # Remove the email after processing
+
+    return attachment_count
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +220,7 @@ def process_zip_file(zip_file_path, extract_to, output_dir):
 
             # Extract base filename and strip everything after the first hyphen, blanks, and single quotes
             base_filename = os.path.splitext(os.path.basename(csv_file_path))[0].split('-')[0].replace(' ', '').strip("'")
+            logging.info(f"Cleaned CSV filename: {base_filename}.csv")
 
             # Save the processed dataframe back to CSV with the cleaned filename
             output_file_path = os.path.join(output_dir, f"{base_filename}.csv")
@@ -272,8 +272,8 @@ def process_all_zip_files(input_directory, output_directory, quarantine_director
 
 def unzip_to_csv():
     processed_files = process_all_zip_files(email_attachments_dir, sensor_data_dir, failed_attachments_dir)
-    print("Processed files:", processed_files)
-    logging.info("Processed files: %s", processed_files)
+    print("Unzipped, cleaned, and saved to SensorData:", processed_files)
+    logging.info("Unzipped, cleaned, and saved to SensorData: %s", processed_files)
 
 
 # ---------------------------------------------------------------------------
@@ -283,10 +283,10 @@ def unzip_to_csv():
 def connect_to_database():
     try:
         connection = mysql.connector.connect(
-            host='localhost',
+            host=os.environ['DB_HOST'],
             database='uhi',
-            user='uhi',
-            password='uhi'
+            user=os.environ['DB_USER'],
+            password=os.environ['DB_PASSWORD']
         )
         if connection.is_connected():
             print("Connected to MySQL database")
@@ -317,6 +317,13 @@ def process_csv_files(connection):
             # Use the full base filename as sensorid
             base_filename = os.path.splitext(filename)[0]
             sensorid = base_filename
+
+            # sensorid column is varchar(20); truncate anything longer so the insert doesn't fail
+            if len(sensorid) > 20:
+                print(f"sensorid '{sensorid}' is longer than 20 characters, truncating to '{sensorid[:20]}'")
+                logging.info(f"sensorid '{sensorid}' is longer than 20 characters, truncating to '{sensorid[:20]}'")
+                sensorid = sensorid[:20]
+
             print(f"Processing file: {filename} with sensorid: {sensorid}")
             logging.info(f"Processing file: {filename} with sensorid: {sensorid}")
 
@@ -362,8 +369,31 @@ def csv_to_sql():
 # Main
 # ---------------------------------------------------------------------------
 
+def has_pending_work():
+    """
+    True if there is a zip file waiting to be unzipped in email_attachments/
+    or a CSV waiting to be inserted in SensorData/. A prior run can leave
+    work behind here (e.g. it crashed after unzipping but before the DB
+    insert), so this must be checked even when no new mail came in this run.
+    """
+    pending_zips = os.path.isdir(email_attachments_dir) and any(
+        f.endswith(".zip") for f in os.listdir(email_attachments_dir)
+    )
+    pending_csvs = os.path.isdir(sensor_data_dir) and any(
+        f.endswith(".csv") for f in os.listdir(sensor_data_dir)
+    )
+    return pending_zips or pending_csvs
+
+
 def main():
-    process_incoming_mail_attachments()
+    attachment_count = process_incoming_mail_attachments()
+    logging.info(f"New attachments found this run: {attachment_count}")
+
+    if not has_pending_work():
+        print("No new incoming mail with attachments and nothing pending to process; exiting.")
+        logging.info("No new incoming mail with attachments and nothing pending to process; exiting.")
+        return
+
     unzip_to_csv()
     csv_to_sql()
 

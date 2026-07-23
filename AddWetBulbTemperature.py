@@ -1,3 +1,4 @@
+import os
 import mysql.connector
 from mysql.connector import Error
 import math
@@ -37,10 +38,10 @@ def main():
     try:
         # Establish the connection to the MySQL database
         connection = mysql.connector.connect(
-            host='localhost',
+            host=os.environ['DB_HOST'],
             database='uhi',
-            user='uhi',  # replace with your username
-            password='uhi'  # replace with your password
+            user=os.environ['DB_USER'],
+            password=os.environ['DB_PASSWORD']
         )
 
         if connection.is_connected():
