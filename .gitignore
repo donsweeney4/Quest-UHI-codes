@@ -8,3 +8,16 @@ archived_data/
 xxx*
 .git-credentials
 .env
+.local/
+.cache/
+.ssh/
+.claude/
+.gitconfig
+.lesshst
+.mysql_history
+.sudo_as_admin_successful
+.viminfo
+__pycache__/
+gunicorn
+BACKUP_uhi.sql
+hold.zip
