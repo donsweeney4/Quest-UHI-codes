@@ -8,6 +8,7 @@ archived_data/
 xxx*
 .git-credentials
 .env
+.my.cnf
 .local/
 .cache/
 .ssh/

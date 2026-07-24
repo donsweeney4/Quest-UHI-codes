@@ -1,6 +1,11 @@
 """
 File: ProcessSensorPushData.py
 
+Folder and storage of data:
+email_attachments -> SensorData or failed_attachments -> mySQL & archived_data
+
+log file: is ProcessSensorPushData.log
+
 Operation:  Combines the three-stage SensorPush ingest pipeline into a single script,
             run in order:
 
@@ -24,6 +29,8 @@ Operation:  Combines the three-stage SensorPush ingest pipeline into a single sc
 Frequency:  The program runs every 5 minutes with cron.
 """
 import os
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 import email
 import mailbox
 from email.policy import default
@@ -31,6 +38,7 @@ import uuid
 import csv
 import shutil
 import time
+from datetime import datetime
 import pandas as pd
 import zipfile
 import mysql.connector
